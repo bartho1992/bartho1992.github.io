@@ -1,335 +1,264 @@
 /**
- * ÉLEVAGE PRO - User Management System
- * Système de gestion des utilisateurs avec authentification et administration
+ * ÉLEVAGE PRO - User Management System (Firebase Version)
+ * Système de gestion des utilisateurs avec authentification Cloud
  */
 
 const UserManager = {
-    USERS_KEY: 'elevage_pro_users',
-    CURRENT_USER_KEY: 'elevage_pro_current_user',
-    ADMIN_USERNAME: 'admin',
-    ADMIN_PASSWORD: 'admin123',
+    // Variable pour stocker le profil utilisateur courant (depuis Firestore)
+    currentUserProfile: null,
 
     /**
-     * Initialise le système (crée ou met à jour l'admin)
+     * Initialise le système
      */
     init() {
-        const users = this.getUsers();
+        // Observer l'état de l'authentification
+        auth.onAuthStateChanged(async (user) => {
+            if (user) {
+                console.log("Utilisateur connecté:", user.uid);
+                // Charger le profil depuis Firestore
+                const userDoc = await db.collection('users').doc(user.uid).get();
+                if (userDoc.exists) {
+                    this.currentUserProfile = userDoc.data();
 
-        // Si l'admin n'existe pas, on le crée avec les identifiants par défaut
-        if (!users['admin']) {
-            users['admin'] = {
-                id: 'admin',
-                username: 'Admin',
-                password: this.hashPassword(this.ADMIN_PASSWORD),
-                isAdmin: true,
-                createdAt: new Date().toISOString()
-            };
-            this.saveUsers(users);
-        } else {
-            // S'assurer que le compte admin garde ses privilèges
-            if (!users['admin'].isAdmin) {
-                users['admin'].isAdmin = true;
-                this.saveUsers(users);
+                    // Màj dernière connexion et device
+                    db.collection('users').doc(user.uid).update({
+                        lastLogin: new Date().toISOString(),
+                        lastDevice: navigator.userAgent
+                    });
+
+                    // Notifier l'app que le login est succès (si App existe)
+                    if (typeof App !== 'undefined' && App.onLoginSuccess) {
+                        App.onLoginSuccess();
+                    }
+                }
+            } else {
+                console.log("Utilisateur déconnecté");
+                this.currentUserProfile = null;
+                if (typeof App !== 'undefined' && App.showAuthModal) {
+                    App.showAuthModal();
+                }
             }
-        }
+        });
     },
 
     /**
-     * Hash simple du mot de passe (pour localStorage uniquement)
+     * Génère un email fictif à partir du nom d'utilisateur
      */
-    hashPassword(password) {
-        let hash = 0;
-        for (let i = 0; i < password.length; i++) {
-            const char = password.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
-            hash = hash & hash;
-        }
-        return 'hash_' + Math.abs(hash).toString(16);
-    },
-
-    /**
-     * Récupère tous les utilisateurs
-     */
-    getUsers() {
-        const data = localStorage.getItem(this.USERS_KEY);
-        return data ? JSON.parse(data) : {};
-    },
-
-    /**
-     * Sauvegarde les utilisateurs
-     */
-    saveUsers(users) {
-        localStorage.setItem(this.USERS_KEY, JSON.stringify(users));
+    _getEmail(username) {
+        // Enlève les espaces et caractères spéciaux pour l'email
+        const cleanName = username.toLowerCase().replace(/[^a-z0-9]/g, '');
+        return `${cleanName}@elevage-pro.local`;
     },
 
     /**
      * Inscrit un nouvel utilisateur
      */
-    register(username, password) {
+    async register(username, password) {
         if (!username || username.trim().length < 2) {
             return { success: false, error: 'Le nom doit contenir au moins 2 caractères' };
         }
-        if (!password || password.length < 4) {
-            return { success: false, error: 'Le mot de passe doit contenir au moins 4 caractères' };
+        if (!password || password.length < 6) { // Firebase demande 6 chars min
+            return { success: false, error: 'Le mot de passe doit contenir au moins 6 caractères' };
         }
 
-        const users = this.getUsers();
-        const userId = username.toLowerCase().replace(/\s+/g, '_');
+        try {
+            const email = this._getEmail(username);
 
-        if (users[userId]) {
-            return { success: false, error: 'Ce nom d\'utilisateur existe déjà' };
+            // 1. Créer le compte Auth
+            const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+            const user = userCredential.user;
+
+            // 2. Créer le profil dans Firestore
+            const userProfile = {
+                id: user.uid,
+                username: username.trim(),
+                email: email,
+                isAdmin: false, // Par défaut
+                createdAt: new Date().toISOString(),
+                lastLogin: new Date().toISOString(),
+                lastDevice: navigator.userAgent
+            };
+
+            await db.collection('users').doc(user.uid).set(userProfile);
+
+            this.currentUserProfile = userProfile;
+            return { success: true, userId: user.uid, username: username.trim() };
+
+        } catch (error) {
+            console.error("Erreur inscription:", error);
+            let msg = "Erreur lors de l'inscription.";
+            if (error.code === 'auth/email-already-in-use') msg = "Ce nom d'utilisateur est déjà pris.";
+            if (error.code === 'auth/weak-password') msg = "Mot de passe trop faible.";
+            return { success: false, error: msg };
         }
-
-        users[userId] = {
-            id: userId,
-            username: username.trim(),
-            password: this.hashPassword(password),
-            isAdmin: false,
-            createdAt: new Date().toISOString(),
-            lastDevice: navigator.userAgent // Stocker les infos de l'appareil
-        };
-
-        this.saveUsers(users);
-        this.setCurrentUser(userId, username.trim(), false);
-        ProgressManager.initUserProgress(userId);
-
-        return { success: true, userId: userId, username: username.trim() };
     },
 
     /**
      * Connecte un utilisateur
      */
-    login(username, password) {
+    async login(username, password) {
         if (!username || !password) {
             return { success: false, error: 'Veuillez remplir tous les champs' };
         }
 
-        const users = this.getUsers();
-        const userId = username.toLowerCase().replace(/\s+/g, '_');
-        const user = users[userId];
-
-        if (!user) {
-            return { success: false, error: 'Utilisateur non trouvé' };
+        try {
+            const email = this._getEmail(username);
+            await auth.signInWithEmailAndPassword(email, password);
+            // onAuthStateChanged s'occupera du reste
+            return { success: true };
+        } catch (error) {
+            console.error("Erreur connexion:", error);
+            let msg = "Erreur de connexion.";
+            if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+                msg = "Nom d'utilisateur ou mot de passe incorrect.";
+            }
+            return { success: false, error: msg };
         }
-
-        if (user.password !== this.hashPassword(password)) {
-            return { success: false, error: 'Mot de passe incorrect' };
-        }
-
-        // Mettre à jour l'appareil et la date de dernière connexion
-        user.lastDevice = navigator.userAgent;
-        user.lastLogin = new Date().toISOString();
-        this.saveUsers(users);
-
-        this.setCurrentUser(userId, user.username, user.isAdmin || false);
-        return { success: true, userId: userId, username: user.username, isAdmin: user.isAdmin };
     },
 
     /**
      * Déconnecte l'utilisateur actuel
      */
-    logout() {
-        localStorage.removeItem(this.CURRENT_USER_KEY);
+    async logout() {
+        await auth.signOut();
+        this.currentUserProfile = null;
         return { success: true };
     },
 
     /**
-     * Définit l'utilisateur courant
-     */
-    setCurrentUser(userId, username, isAdmin = false) {
-        localStorage.setItem(this.CURRENT_USER_KEY, JSON.stringify({
-            id: userId,
-            username: username,
-            isAdmin: isAdmin
-        }));
-    },
-
-    /**
-     * Récupère l'utilisateur courant
+     * Récupère l'utilisateur courant (synchrone car mis en cache dans init)
      */
     getCurrentUser() {
-        const data = localStorage.getItem(this.CURRENT_USER_KEY);
-        return data ? JSON.parse(data) : null;
+        return this.currentUserProfile;
     },
 
     /**
      * Vérifie si un utilisateur est connecté
      */
     isLoggedIn() {
-        return !!this.getCurrentUser();
+        return !!auth.currentUser;
     },
 
     /**
      * Vérifie si l'utilisateur courant est admin
      */
     isAdmin() {
-        const user = this.getCurrentUser();
-        return user?.isAdmin || false;
+        return this.currentUserProfile?.isAdmin || false;
     },
 
     /**
      * Récupère le nom d'affichage de l'utilisateur courant
      */
     getCurrentUsername() {
-        const user = this.getCurrentUser();
-        return user ? user.username : null;
+        return this.currentUserProfile ? this.currentUserProfile.username : null;
     },
 
     /**
      * Récupère l'ID de l'utilisateur courant
      */
     getCurrentUserId() {
-        const user = this.getCurrentUser();
-        return user ? user.id : null;
+        return auth.currentUser ? auth.currentUser.uid : null;
     },
 
-    // === FONCTIONS D'ADMINISTRATION ===
+    // === FONCTIONS D'ADMINISTRATION (Async maintenant) ===
 
     /**
      * Récupère la liste de tous les utilisateurs (admin only)
      */
-    getAllUsers() {
+    async getAllUsers() {
+        // Note: Seules les règles de sécurité Firestore empêcheront réellement l'accès
+        // Mais on check quand même ici pour l'UI
         if (!this.isAdmin()) return [];
 
-        const users = this.getUsers();
-        return Object.values(users).map(user => ({
-            id: user.id,
-            username: user.username,
-            isAdmin: user.isAdmin || false,
-            createdAt: user.createdAt
-        }));
+        try {
+            const snapshot = await db.collection('users').orderBy('lastLogin', 'desc').get();
+            return snapshot.docs.map(doc => doc.data());
+        } catch (error) {
+            console.error("Erreur récupération utilisateurs:", error);
+            return [];
+        }
+    },
+
+    /**
+     * Écoute la liste des utilisateurs en temps réel
+     */
+    subscribeToAllUsers(callback) {
+        if (!this.isAdmin()) return null;
+
+        return db.collection('users').orderBy('lastLogin', 'desc')
+            .onSnapshot((snapshot) => {
+                const users = snapshot.docs.map(doc => doc.data());
+                callback(users);
+            });
     },
 
     /**
      * Supprime un utilisateur (admin only)
+     * Note: On ne peut pas supprimer le compte Auth sans Cloud Functions d'admin,
+     * Donc on va juste supprimer le doc Firestore pour l'instant (soft delete)
      */
-    deleteUser(userId) {
-        if (!this.isAdmin()) {
-            return { success: false, error: 'Action non autorisée' };
+    async deleteUser(userId) {
+        if (!this.isAdmin()) return { success: false, error: 'Non autorisé' };
+
+        try {
+            await db.collection('users').doc(userId).delete();
+            return { success: true };
+        } catch (error) {
+            return { success: false, error: error.message };
         }
-        if (userId === 'admin') {
-            return { success: false, error: 'Impossible de supprimer l\'administrateur' };
-        }
-
-        const users = this.getUsers();
-        if (!users[userId]) {
-            return { success: false, error: 'Utilisateur non trouvé' };
-        }
-
-        delete users[userId];
-        this.saveUsers(users);
-
-        // Supprimer aussi la progression de l'utilisateur
-        localStorage.removeItem('elevage_pro_progress_' + userId);
-
-        return { success: true };
     },
 
     /**
      * Récupère la progression d'un utilisateur (admin only)
      */
-    getUserProgress(userId) {
+    async getUserProgress(userId) {
         if (!this.isAdmin()) return null;
 
-        const data = localStorage.getItem('elevage_pro_progress_' + userId);
-        return data ? JSON.parse(data) : null;
+        try {
+            const doc = await db.collection('users').doc(userId).collection('data').doc('progress').get();
+            return doc.exists ? doc.data() : null;
+        } catch (error) {
+            console.error("Erreur lecture progression:", error);
+            return null;
+        }
     },
 
     /**
      * Réinitialise la progression d'un utilisateur (admin only)
      */
-    resetUserProgress(userId) {
-        if (!this.isAdmin()) {
-            return { success: false, error: 'Action non autorisée' };
-        }
+    async resetUserProgress(userId) {
+        if (!this.isAdmin()) return { success: false, error: 'Non autorisé' };
 
-        ProgressManager.initUserProgress(userId);
-        return { success: true };
+        try {
+            // On délègue au ProgressManager ou on supprime direct le doc
+            await db.collection('users').doc(userId).collection('data').doc('progress').delete();
+            return { success: true };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
     },
 
     /**
-     * Promouvoir un utilisateur en admin
+     * Met à jour le profil (pour l'admin qui veut changer ses infos)
+     * Note: Changer le mot de passe est complexe avec Firebase Client SDK sans re-login
+     * On va juste permettre de changer le Username pour l'instant
      */
-    promoteToAdmin(userId) {
-        if (!this.isAdmin()) {
-            return { success: false, error: 'Action non autorisée' };
-        }
+    async updateAdminProfile(newUsername) {
+        if (!this.isAdmin()) return { success: false, error: 'Non autorisé' };
 
-        const users = this.getUsers();
-        if (!users[userId]) {
-            return { success: false, error: 'Utilisateur non trouvé' };
+        try {
+            await db.collection('users').doc(this.getCurrentUserId()).update({
+                username: newUsername
+            });
+            this.currentUserProfile.username = newUsername;
+            return { success: true };
+        } catch (error) {
+            return { success: false, error: error.message };
         }
-
-        users[userId].isAdmin = true;
-        this.saveUsers(users);
-        return { success: true };
     },
 
-    /**
-     * Rétrograder un admin en utilisateur normal
-     */
-    demoteFromAdmin(userId) {
-        if (!this.isAdmin()) {
-            return { success: false, error: 'Action non autorisée' };
-        }
-        if (userId === 'admin') {
-            return { success: false, error: 'Impossible de rétrograder l\'administrateur principal' };
-        }
-
-        const users = this.getUsers();
-        if (!users[userId]) {
-            return { success: false, error: 'Utilisateur non trouvé' };
-        }
-
-        users[userId].isAdmin = false;
-        this.saveUsers(users);
-        return { success: true };
-    },
-
-    /**
-     * Met à jour le profil de l'administrateur principal
-     */
-    updateAdminProfile(newUsername, newPassword) {
-        if (!this.isAdmin()) {
-            return { success: false, error: 'Action non autorisée' };
-        }
-
-        const users = this.getUsers();
-        const admin = users['admin'];
-
-        if (!admin) {
-            return { success: false, error: 'Admin non trouvé' };
-        }
-
-        // Mise à jour du nom
-        if (newUsername && newUsername.trim().length >= 2) {
-            admin.username = newUsername.trim();
-        }
-
-        // Mise à jour du mot de passe
-        if (newPassword && newPassword.length >= 4) {
-            admin.password = this.hashPassword(newPassword);
-        }
-
-        this.saveUsers(users);
-
-        // Mettre à jour la session si c'est l'admin qui modifie son profil
-        const currentUser = this.getCurrentUser();
-        if (currentUser && currentUser.id === 'admin') {
-            this.setCurrentUser('admin', admin.username, true);
-        }
-
-        return { success: true, username: admin.username };
-    },
-
-    /**
-     * Récupère les informations de l'admin
-     */
     getAdminInfo() {
-        if (!this.isAdmin()) return null;
-
-        const users = this.getUsers();
-        return users['admin'] ? { username: users['admin'].username } : null;
+        return this.currentUserProfile;
     }
 };
 

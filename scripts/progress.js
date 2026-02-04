@@ -1,35 +1,54 @@
 /**
- * ÉLEVAGE PRO - Progress Management System
- * Gestion de la progression par utilisateur avec localStorage
+ * ÉLEVAGE PRO - Progress Management System (Firebase Version)
+ * Gestion de la progression synchronisée avec Firestore
  */
 
 const ProgressManager = {
-    STORAGE_PREFIX: 'elevage_pro_progress_',
+    // Cache local pour éviter les latences de lecture et permettre l'accès synchrone
+    _cache: null,
 
     /**
-     * Obtient la clé de stockage pour l'utilisateur courant
+     * Initialise le système de progression (Charge depuis Firestore)
      */
-    getStorageKey() {
+    async init() {
+        if (!UserManager.isLoggedIn()) {
+            this._cache = null;
+            return;
+        }
+
         const userId = UserManager.getCurrentUserId();
-        return userId ? this.STORAGE_PREFIX + userId : this.STORAGE_PREFIX + 'anonymous';
-    },
+        if (!userId) return;
 
-    /**
-     * Initialise le système de progression
-     */
-    init() {
-        if (UserManager.isLoggedIn() && !this.getProgress()) {
-            this.resetProgress();
+        try {
+            // Essayer de charger depuis Firestore
+            const doc = await db.collection('users').doc(userId).collection('data').doc('progress').get();
+
+            if (doc.exists) {
+                this._cache = doc.data();
+            } else {
+                // Créer si n'existe pas
+                this._cache = this.getDefaultProgress();
+                await this.saveCacheToFirestore();
+            }
+            console.log("Progression chargée:", this._cache);
+        } catch (error) {
+            console.error("Erreur chargement progression:", error);
+            // Fallback sur défaut si erreur (ex: offline)
+            this._cache = this.getDefaultProgress();
         }
     },
 
     /**
-     * Initialise la progression pour un nouvel utilisateur
+     * Initialise la progression pour un nouvel utilisateur (Appelé par UserManager.register)
      */
-    initUserProgress(userId) {
-        const key = this.STORAGE_PREFIX + userId;
-        const defaultProgress = this.getDefaultProgress();
-        localStorage.setItem(key, JSON.stringify(defaultProgress));
+    async initUserProgress(userId) {
+        this._cache = this.getDefaultProgress();
+        // On force la sauvegarde pour ce user spécifique
+        try {
+            await db.collection('users').doc(userId).collection('data').doc('progress').set(this._cache);
+        } catch (error) {
+            console.error("Erreur init progression:", error);
+        }
     },
 
     /**
@@ -47,26 +66,45 @@ const ProgressManager = {
     },
 
     /**
-     * Récupère toute la progression de l'utilisateur courant
+     * Récupère toute la progression (Synchrone depuis cache)
      */
     getProgress() {
-        const data = localStorage.getItem(this.getStorageKey());
-        return data ? JSON.parse(data) : null;
+        if (!this._cache && UserManager.isLoggedIn()) {
+            // Si pas de cache mais loggé, on retourne défaut temporairement
+            // Idéalement, init() devrait être await avant d'appeler ça
+            return this.getDefaultProgress();
+        }
+        return this._cache;
     },
 
     /**
-     * Sauvegarde la progression
+     * Sauvegarde la progression (Cache + Firestore Async)
      */
-    saveProgress(progress) {
-        localStorage.setItem(this.getStorageKey(), JSON.stringify(progress));
+    async saveProgress(progress) {
+        this._cache = progress;
+        await this.saveCacheToFirestore();
+    },
+
+    /**
+     * Sauvegarde interne vers Firestore
+     */
+    async saveCacheToFirestore() {
+        const userId = UserManager.getCurrentUserId();
+        if (!userId || !this._cache) return;
+
+        try {
+            await db.collection('users').doc(userId).collection('data').doc('progress').set(this._cache);
+        } catch (error) {
+            console.error("Erreur sauvegarde progression:", error);
+        }
     },
 
     /**
      * Réinitialise la progression
      */
-    resetProgress() {
+    async resetProgress() {
         const defaultProgress = this.getDefaultProgress();
-        this.saveProgress(defaultProgress);
+        await this.saveProgress(defaultProgress);
         return defaultProgress;
     },
 
@@ -75,12 +113,14 @@ const ProgressManager = {
      */
     completeModule(animalType, moduleIndex) {
         let progress = this.getProgress();
-        if (!progress) {
-            progress = this.resetProgress();
-        }
+        if (!progress) progress = this.getDefaultProgress();
+
+        // Initialiser si nécessaire (pour éviter crash sur vielles versions)
+        if (!progress[animalType]) progress[animalType] = { completed: [], quizScores: {} };
+
         if (!progress[animalType].completed.includes(moduleIndex)) {
             progress[animalType].completed.push(moduleIndex);
-            this.saveProgress(progress);
+            this.saveProgress(progress); // Async mais on n'attend pas forcément
         }
         return progress;
     },
@@ -98,9 +138,10 @@ const ProgressManager = {
      */
     saveQuizScore(animalType, moduleIndex, score, total) {
         let progress = this.getProgress();
-        if (!progress) {
-            progress = this.resetProgress();
-        }
+        if (!progress) progress = this.getDefaultProgress();
+
+        if (!progress[animalType]) progress[animalType] = { completed: [], quizScores: {} };
+
         progress[animalType].quizScores[moduleIndex] = {
             score,
             total,
@@ -164,12 +205,14 @@ const ProgressManager = {
         let totalScore = 0;
 
         for (const animal in progress) {
-            totalModules += progress[animal].completed.length;
-            const quizzes = Object.values(progress[animal].quizScores);
-            totalQuizzes += quizzes.length;
-            quizzes.forEach(q => {
-                totalScore += (q.score / q.total) * 100;
-            });
+            if (progress[animal]) {
+                totalModules += progress[animal].completed.length;
+                const quizzes = Object.values(progress[animal].quizScores);
+                totalQuizzes += quizzes.length;
+                quizzes.forEach(q => {
+                    totalScore += (q.score / q.total) * 100;
+                });
+            }
         }
 
         return {

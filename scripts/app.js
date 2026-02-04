@@ -101,8 +101,8 @@ const App = {
     /**
      * Appelé quand l'utilisateur est connecté
      */
-    onLoginSuccess() {
-        ProgressManager.init();
+    async onLoginSuccess() {
+        await ProgressManager.init();
         this.renderFormationsGrid();
         this.renderProgressOverview();
         this.renderCertificates();
@@ -162,30 +162,37 @@ const App = {
     /**
      * Gère la connexion
      */
-    handleLogin() {
+    async handleLogin() {
         const username = document.getElementById('loginUsername').value.trim();
         const password = document.getElementById('loginPassword').value;
         const errorDiv = document.getElementById('loginError');
+        const btn = document.getElementById('btnLogin');
 
-        const result = UserManager.login(username, password);
+        if (!username || !password) return;
 
-        if (result.success) {
-            this.onLoginSuccess();
-            this.showToast('success', `Bienvenue ${result.username} ! 🎉`);
-        } else {
+        btn.disabled = true;
+        btn.textContent = 'Connexion...';
+
+        const result = await UserManager.login(username, password);
+
+        if (!result.success) {
             errorDiv.textContent = result.error;
             errorDiv.classList.add('visible');
+            btn.disabled = false;
+            btn.textContent = 'Se connecter';
         }
+        // Si succès, UserManager.init() déclenchera App.onLoginSuccess() via le callback
     },
 
     /**
      * Gère l'inscription
      */
-    handleRegister() {
+    async handleRegister() {
         const username = document.getElementById('registerUsername').value.trim();
         const password = document.getElementById('registerPassword').value;
         const confirm = document.getElementById('registerConfirm').value;
         const errorDiv = document.getElementById('registerError');
+        const btn = document.getElementById('btnRegister');
 
         if (password !== confirm) {
             errorDiv.textContent = 'Les mots de passe ne correspondent pas';
@@ -193,14 +200,16 @@ const App = {
             return;
         }
 
-        const result = UserManager.register(username, password);
+        btn.disabled = true;
+        btn.textContent = 'Création...';
 
-        if (result.success) {
-            this.onLoginSuccess();
-            this.showToast('success', `Compte créé ! Bienvenue ${result.username} ! 🎉`);
-        } else {
+        const result = await UserManager.register(username, password);
+
+        if (!result.success) {
             errorDiv.textContent = result.error;
             errorDiv.classList.add('visible');
+            btn.disabled = false;
+            btn.textContent = 'Créer mon compte';
         }
     },
 
@@ -279,11 +288,23 @@ const App = {
     /**
      * Affiche le modal d'administration
      */
+    // Variable pour stocker l'abonnement Firestore
+    unsubscribeAdmin: null,
+
+    /**
+     * Affiche le modal d'administration
+     */
     showAdminModal() {
         if (!UserManager.isAdmin()) return;
 
-        this.renderAdminStats();
-        this.renderAdminUsersList();
+        // S'abonner aux mises à jour en temps réel
+        if (this.unsubscribeAdmin) this.unsubscribeAdmin();
+
+        this.unsubscribeAdmin = UserManager.subscribeToAllUsers((users) => {
+            this.renderAdminUsersList(users);
+            this.renderAdminStats(users);
+        });
+
         this.initAdminProfileForm();
         document.getElementById('adminModal').classList.add('active');
     },
@@ -296,7 +317,7 @@ const App = {
         if (adminInfo) {
             document.getElementById('adminNewUsername').value = adminInfo.username;
         }
-        document.getElementById('adminNewPassword').value = '';
+        document.getElementById('adminNewPassword').value = ''; // Password change not supported cleanly yet
         document.getElementById('adminProfileSuccess').classList.add('hidden');
 
         // Gestionnaire pour le bouton de mise à jour
@@ -306,18 +327,19 @@ const App = {
     /**
      * Gère la mise à jour du profil admin
      */
-    handleUpdateAdminProfile() {
+    async handleUpdateAdminProfile() {
         const newUsername = document.getElementById('adminNewUsername').value;
-        const newPassword = document.getElementById('adminNewPassword').value;
+        const btn = document.getElementById('btnUpdateAdmin');
 
-        const result = UserManager.updateAdminProfile(newUsername, newPassword);
+        btn.disabled = true;
+        const result = await UserManager.updateAdminProfile(newUsername);
+        btn.disabled = false;
 
         if (result.success) {
             document.getElementById('adminProfileSuccess').classList.remove('hidden');
             this.updateUserDisplay();
             this.showToast('success', 'Profil admin mis à jour ! 👑');
 
-            // Masquer le message de succès après 3 secondes
             setTimeout(() => {
                 document.getElementById('adminProfileSuccess').classList.add('hidden');
             }, 3000);
@@ -331,24 +353,20 @@ const App = {
      */
     closeAdminModal() {
         document.getElementById('adminModal').classList.remove('active');
+        if (this.unsubscribeAdmin) {
+            this.unsubscribeAdmin();
+            this.unsubscribeAdmin = null;
+        }
     },
 
     /**
      * Affiche les statistiques d'administration
      */
-    renderAdminStats() {
-        const users = UserManager.getAllUsers();
-        const admins = users.filter(u => u.isAdmin).length;
+    renderAdminStats(users) {
+        // users est passé par le subscribe
+        if (!users) return;
 
-        let totalModules = 0;
-        users.forEach(user => {
-            const progress = UserManager.getUserProgress(user.id);
-            if (progress) {
-                Object.values(progress).forEach(animal => {
-                    totalModules += animal.completed?.length || 0;
-                });
-            }
-        });
+        const admins = users.filter(u => u.isAdmin).length;
 
         document.getElementById('adminStats').innerHTML = `
             <div class="admin-stat-card">
@@ -360,8 +378,8 @@ const App = {
                 <div class="admin-stat-label">Admins</div>
             </div>
             <div class="admin-stat-card">
-                <div class="admin-stat-value">${totalModules}</div>
-                <div class="admin-stat-label">Modules complétés</div>
+                <div class="admin-stat-value">Cloud</div>
+                <div class="admin-stat-label">Connecté 🟢</div>
             </div>
         `;
     },
@@ -369,19 +387,12 @@ const App = {
     /**
      * Affiche la liste des utilisateurs
      */
-    renderAdminUsersList() {
-        const users = UserManager.getAllUsers();
+    renderAdminUsersList(users) {
+        if (!users) return;
         const container = document.getElementById('adminUsersList');
+        const currentUserId = UserManager.getCurrentUserId();
 
         container.innerHTML = users.map(user => {
-            const progress = UserManager.getUserProgress(user.id);
-            let completedModules = 0;
-            if (progress) {
-                Object.values(progress).forEach(animal => {
-                    completedModules += animal.completed?.length || 0;
-                });
-            }
-
             const createdDate = new Date(user.createdAt).toLocaleDateString('fr-FR');
             // Analyse simple du User Agent pour l'affichage
             let deviceIcon = '💻';
@@ -421,10 +432,10 @@ const App = {
                         </div>
                     </div>
                     <div class="admin-user-stats">
-                        <span>📚 ${completedModules}/42 modules</span>
+                         <span>📧 ${user.email || 'N/A'}</span>
                     </div>
                     <div class="admin-user-actions">
-                        ${!isMainAdmin ? `
+                        ${user.id !== currentUserId ? `
                             <button class="btn-admin-action" onclick="App.resetUserProgress('${user.id}')" title="Réinitialiser progression">🔄</button>
                             <button class="btn-admin-action danger" onclick="App.deleteUser('${user.id}')" title="Supprimer">🗑️</button>
                         ` : '<span style="color: var(--color-text-secondary); font-size: 12px;">Principal</span>'}
@@ -437,14 +448,13 @@ const App = {
     /**
      * Supprime un utilisateur
      */
-    deleteUser(userId) {
+    async deleteUser(userId) {
         if (!confirm(`Voulez-vous vraiment supprimer cet utilisateur ?`)) return;
 
-        const result = UserManager.deleteUser(userId);
+        const result = await UserManager.deleteUser(userId);
         if (result.success) {
             this.showToast('success', 'Utilisateur supprimé');
-            this.renderAdminUsersList();
-            this.renderAdminStats();
+            // Le subscribe mettra à jour l'UI automatiquement
         } else {
             this.showToast('error', result.error);
         }
@@ -453,14 +463,12 @@ const App = {
     /**
      * Réinitialise la progression d'un utilisateur
      */
-    resetUserProgress(userId) {
+    async resetUserProgress(userId) {
         if (!confirm(`Voulez-vous vraiment réinitialiser la progression de cet utilisateur ?`)) return;
 
-        const result = UserManager.resetUserProgress(userId);
+        const result = await UserManager.resetUserProgress(userId);
         if (result.success) {
             this.showToast('success', 'Progression réinitialisée');
-            this.renderAdminUsersList();
-            this.renderAdminStats();
         } else {
             this.showToast('error', result.error);
         }
