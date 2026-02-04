@@ -85,7 +85,8 @@ const UserManager = {
             username: username.trim(),
             password: this.hashPassword(password),
             isAdmin: false,
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            lastDevice: navigator.userAgent // Stocker les infos de l'appareil
         };
 
         this.saveUsers(users);
@@ -114,6 +115,11 @@ const UserManager = {
         if (user.password !== this.hashPassword(password)) {
             return { success: false, error: 'Mot de passe incorrect' };
         }
+
+        // Mettre à jour l'appareil et la date de dernière connexion
+        user.lastDevice = navigator.userAgent;
+        user.lastLogin = new Date().toISOString();
+        this.saveUsers(users);
 
         this.setCurrentUser(userId, user.username, user.isAdmin || false);
         return { success: true, userId: userId, username: user.username, isAdmin: user.isAdmin };

@@ -383,7 +383,26 @@ const App = {
             }
 
             const createdDate = new Date(user.createdAt).toLocaleDateString('fr-FR');
-            const isMainAdmin = user.id === 'admin';
+            // Analyse simple du User Agent pour l'affichage
+            let deviceIcon = '💻';
+            let deviceName = 'Inconnu';
+            const ua = user.lastDevice || '';
+
+            if (/mobile/i.test(ua)) {
+                deviceIcon = '📱';
+                deviceName = 'Mobile';
+            } else if (/tablet/i.test(ua)) {
+                deviceIcon = '📱';
+                deviceName = 'Tablette';
+            } else {
+                deviceName = 'Ordinateur';
+            }
+
+            if (/chrome/i.test(ua)) deviceName += ' (Chrome)';
+            else if (/firefox/i.test(ua)) deviceName += ' (Firefox)';
+            else if (/safari/i.test(ua)) deviceName += ' (Safari)';
+
+            const lastLogin = user.lastLogin ? new Date(user.lastLogin).toLocaleDateString('fr-FR') : 'Jamais';
 
             return `
                 <div class="admin-user-card">
@@ -394,7 +413,11 @@ const App = {
                                 ${user.username}
                                 ${user.isAdmin ? '<span class="admin-user-badge">Admin</span>' : ''}
                             </div>
-                            <div class="admin-user-meta">Inscrit le ${createdDate}</div>
+                            <div class="admin-user-meta">
+                                📅 Inscrit: ${createdDate}<br>
+                                🕒 Vu: ${lastLogin}<br>
+                                ${deviceIcon} ${deviceName}
+                            </div>
                         </div>
                     </div>
                     <div class="admin-user-stats">
