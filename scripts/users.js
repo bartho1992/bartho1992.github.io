@@ -117,8 +117,12 @@ const UserManager = {
         } catch (error) {
             console.error("Erreur connexion:", error);
             let msg = "Erreur de connexion.";
-            if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+            if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
                 msg = "Nom d'utilisateur ou mot de passe incorrect.";
+            } else if (error.code === 'auth/too-many-requests') {
+                msg = "Trop de tentatives. Réessayez plus tard.";
+            } else {
+                msg += " (" + error.message + ")";
             }
             return { success: false, error: msg };
         }
