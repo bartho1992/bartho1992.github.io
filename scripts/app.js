@@ -84,7 +84,29 @@ const App = {
      */
     init() {
         this.checkAuth();
+        this.setupPasswordToggles();
         this.setupEventListeners();
+    },
+
+    /**
+     * Configure l'affichage/masquage des mots de passe
+     */
+    setupPasswordToggles() {
+        document.querySelectorAll('.btn-toggle-password').forEach(btn => {
+            btn.onclick = (e) => {
+                e.preventDefault();
+                const input = btn.previousElementSibling;
+                if (input && input.tagName === 'INPUT') {
+                    if (input.type === 'password') {
+                        input.type = 'text';
+                        btn.textContent = '🔓';
+                    } else {
+                        input.type = 'password';
+                        btn.textContent = '👁️';
+                    }
+                }
+            };
+        });
     },
 
     /**

@@ -1,6 +1,6 @@
 /**
- * ÉLEVAGE PRO - Progress Management System (Firebase Version)
- * Gestion de la progression synchronisée avec Firestore
+ * ÉLEVAGE PRO - Progress Management System (Firebase Realtime Database Version)
+ * Gestion de la progression synchronisée avec Realtime Database
  */
 
 const ProgressManager = {
@@ -8,7 +8,7 @@ const ProgressManager = {
     _cache: null,
 
     /**
-     * Initialise le système de progression (Charge depuis Firestore)
+     * Initialise le système de progression (Charge depuis Realtime Database)
      */
     async init() {
         if (!UserManager.isLoggedIn()) {
@@ -20,15 +20,15 @@ const ProgressManager = {
         if (!userId) return;
 
         try {
-            // Essayer de charger depuis Firestore
-            const doc = await db.collection('users').doc(userId).collection('data').doc('progress').get();
+            // Essayer de charger depuis Realtime Database
+            const snapshot = await db.ref('users/' + userId + '/progress').once('value');
 
-            if (doc.exists) {
-                this._cache = doc.data();
+            if (snapshot.exists()) {
+                this._cache = snapshot.val();
             } else {
                 // Créer si n'existe pas
                 this._cache = this.getDefaultProgress();
-                await this.saveCacheToFirestore();
+                await this.saveCacheToCloud();
             }
             console.log("Progression chargée:", this._cache);
         } catch (error) {
@@ -45,7 +45,7 @@ const ProgressManager = {
         this._cache = this.getDefaultProgress();
         // On force la sauvegarde pour ce user spécifique
         try {
-            await db.collection('users').doc(userId).collection('data').doc('progress').set(this._cache);
+            await db.ref('users/' + userId + '/progress').set(this._cache);
         } catch (error) {
             console.error("Erreur init progression:", error);
         }
@@ -78,22 +78,22 @@ const ProgressManager = {
     },
 
     /**
-     * Sauvegarde la progression (Cache + Firestore Async)
+     * Sauvegarde la progression (Cache + Cloud Async)
      */
     async saveProgress(progress) {
         this._cache = progress;
-        await this.saveCacheToFirestore();
+        await this.saveCacheToCloud();
     },
 
     /**
-     * Sauvegarde interne vers Firestore
+     * Sauvegarde interne vers Realtime Database
      */
-    async saveCacheToFirestore() {
+    async saveCacheToCloud() {
         const userId = UserManager.getCurrentUserId();
         if (!userId || !this._cache) return;
 
         try {
-            await db.collection('users').doc(userId).collection('data').doc('progress').set(this._cache);
+            await db.ref('users/' + userId + '/progress').set(this._cache);
         } catch (error) {
             console.error("Erreur sauvegarde progression:", error);
         }

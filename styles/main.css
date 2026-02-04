@@ -1601,6 +1601,38 @@ body {
     text-align: right;
 }
 
+/* Input Wrapper for Password Toggle */
+.input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.input-wrapper .form-input {
+    padding-right: 40px;
+    /* Space for the button */
+}
+
+.btn-toggle-password {
+    position: absolute;
+    right: 10px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.2rem;
+    color: var(--color-text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px;
+    transition: color 0.2s;
+    z-index: 10;
+}
+
+.btn-toggle-password:hover {
+    color: var(--color-primary);
+}
+
 .font-bold {
     font-weight: 700;
 }

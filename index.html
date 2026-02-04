@@ -178,7 +178,12 @@
                     </div>
                     <div class="form-group">
                         <label for="loginPassword">Mot de passe</label>
-                        <input type="password" id="loginPassword" class="form-input" placeholder="Votre mot de passe">
+                        <div class="input-wrapper">
+                            <input type="password" id="loginPassword" class="form-input"
+                                placeholder="Votre mot de passe">
+                            <button type="button" class="btn-toggle-password" tabindex="-1"
+                                title="Afficher/Masquer">👁️</button>
+                        </div>
                     </div>
                     <div class="auth-error" id="loginError"></div>
                     <button class="btn btn-primary btn-block" id="btnLogin">Se connecter</button>
@@ -193,12 +198,21 @@
                     </div>
                     <div class="form-group">
                         <label for="registerPassword">Mot de passe</label>
-                        <input type="password" id="registerPassword" class="form-input" placeholder="Min. 4 caractères">
+                        <div class="input-wrapper">
+                            <input type="password" id="registerPassword" class="form-input"
+                                placeholder="Min. 4 caractères">
+                            <button type="button" class="btn-toggle-password" tabindex="-1"
+                                title="Afficher/Masquer">👁️</button>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label for="registerConfirm">Confirmer le mot de passe</label>
-                        <input type="password" id="registerConfirm" class="form-input"
-                            placeholder="Confirmez le mot de passe">
+                        <div class="input-wrapper">
+                            <input type="password" id="registerConfirm" class="form-input"
+                                placeholder="Confirmez le mot de passe">
+                            <button type="button" class="btn-toggle-password" tabindex="-1"
+                                title="Afficher/Masquer">👁️</button>
+                        </div>
                     </div>
                     <div class="auth-error" id="registerError"></div>
                     <button class="btn btn-primary btn-block" id="btnRegister">Créer mon compte</button>
@@ -230,8 +244,12 @@
                             </div>
                             <div class="form-group">
                                 <label for="adminNewPassword">Nouveau mot de passe</label>
-                                <input type="password" id="adminNewPassword" class="form-input"
-                                    placeholder="Laisser vide pour ne pas changer">
+                                <div class="input-wrapper">
+                                    <input type="password" id="adminNewPassword" class="form-input"
+                                        placeholder="Laisser vide pour ne pas changer">
+                                    <button type="button" class="btn-toggle-password" tabindex="-1"
+                                        title="Afficher/Masquer">👁️</button>
+                                </div>
                             </div>
                         </div>
                         <button class="btn btn-primary" id="btnUpdateAdmin">💾 Enregistrer les modifications</button>
@@ -274,12 +292,12 @@
     <script src="data/apiculture.js"></script>
     <script src="data/cuniculture.js"></script>
     <script src="data/aquaculture.js"></script>
-    
+
     <!-- Firebase SDKs (Compat version for simple HTML/JS) -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
-    
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+
     <!-- Firebase Config -->
     <script src="scripts/firebase-config.js"></script>
 

@@ -1,10 +1,10 @@
 /**
- * ÉLEVAGE PRO - User Management System (Firebase Version)
+ * ÉLEVAGE PRO - User Management System (Firebase Realtime Database Version)
  * Système de gestion des utilisateurs avec authentification Cloud
  */
 
 const UserManager = {
-    // Variable pour stocker le profil utilisateur courant (depuis Firestore)
+    // Variable pour stocker le profil utilisateur courant
     currentUserProfile: null,
 
     /**
@@ -15,13 +15,13 @@ const UserManager = {
         auth.onAuthStateChanged(async (user) => {
             if (user) {
                 console.log("Utilisateur connecté:", user.uid);
-                // Charger le profil depuis Firestore
-                const userDoc = await db.collection('users').doc(user.uid).get();
-                if (userDoc.exists) {
-                    this.currentUserProfile = userDoc.data();
+                // Charger le profil depuis Realtime Database
+                const snapshot = await db.ref('users/' + user.uid).once('value');
+                if (snapshot.exists()) {
+                    this.currentUserProfile = snapshot.val();
 
                     // Màj dernière connexion et device
-                    db.collection('users').doc(user.uid).update({
+                    db.ref('users/' + user.uid).update({
                         lastLogin: new Date().toISOString(),
                         lastDevice: navigator.userAgent
                     });
@@ -68,7 +68,7 @@ const UserManager = {
             const userCredential = await auth.createUserWithEmailAndPassword(email, password);
             const user = userCredential.user;
 
-            // 2. Créer le profil dans Firestore
+            // 2. Créer le profil dans Realtime Database
             const userProfile = {
                 id: user.uid,
                 username: username.trim(),
@@ -76,10 +76,12 @@ const UserManager = {
                 isAdmin: false, // Par défaut
                 createdAt: new Date().toISOString(),
                 lastLogin: new Date().toISOString(),
-                lastDevice: navigator.userAgent
+                lastDevice: navigator.userAgent,
+                // On initialise la progress vide ici pour éviter les erreurs de lecture
+                progress: ProgressManager.getDefaultProgress()
             };
 
-            await db.collection('users').doc(user.uid).set(userProfile);
+            await db.ref('users/' + user.uid).set(userProfile);
 
             this.currentUserProfile = userProfile;
             return { success: true, userId: user.uid, username: username.trim() };
@@ -87,8 +89,14 @@ const UserManager = {
         } catch (error) {
             console.error("Erreur inscription:", error);
             let msg = "Erreur lors de l'inscription.";
-            if (error.code === 'auth/email-already-in-use') msg = "Ce nom d'utilisateur est déjà pris.";
-            if (error.code === 'auth/weak-password') msg = "Mot de passe trop faible.";
+            if (error.code === 'auth/email-already-in-use') {
+                msg = "Ce nom d'utilisateur est déjà pris. Essayez-en un autre.";
+            } else if (error.code === 'auth/weak-password') {
+                msg = "Mot de passe trop faible (6 caractères min).";
+            } else {
+                // Affiche le message technique pour comprendre le problème
+                msg += " (" + error.message + ")";
+            }
             return { success: false, error: msg };
         }
     },
@@ -166,13 +174,15 @@ const UserManager = {
      * Récupère la liste de tous les utilisateurs (admin only)
      */
     async getAllUsers() {
-        // Note: Seules les règles de sécurité Firestore empêcheront réellement l'accès
-        // Mais on check quand même ici pour l'UI
         if (!this.isAdmin()) return [];
 
         try {
-            const snapshot = await db.collection('users').orderBy('lastLogin', 'desc').get();
-            return snapshot.docs.map(doc => doc.data());
+            const snapshot = await db.ref('users').orderByChild('lastLogin').once('value');
+            const users = [];
+            snapshot.forEach((childSnapshot) => {
+                users.push(childSnapshot.val());
+            });
+            return users.reverse(); // Plus récent en premier
         } catch (error) {
             console.error("Erreur récupération utilisateurs:", error);
             return [];
@@ -185,23 +195,28 @@ const UserManager = {
     subscribeToAllUsers(callback) {
         if (!this.isAdmin()) return null;
 
-        return db.collection('users').orderBy('lastLogin', 'desc')
-            .onSnapshot((snapshot) => {
-                const users = snapshot.docs.map(doc => doc.data());
-                callback(users);
+        const usersRef = db.ref('users').orderByChild('lastLogin');
+
+        const listener = usersRef.on('value', (snapshot) => {
+            const users = [];
+            snapshot.forEach((childSnapshot) => {
+                users.push(childSnapshot.val());
             });
+            callback(users.reverse());
+        });
+
+        // Retourne une fonction de désinscription
+        return () => usersRef.off('value', listener);
     },
 
     /**
      * Supprime un utilisateur (admin only)
-     * Note: On ne peut pas supprimer le compte Auth sans Cloud Functions d'admin,
-     * Donc on va juste supprimer le doc Firestore pour l'instant (soft delete)
      */
     async deleteUser(userId) {
         if (!this.isAdmin()) return { success: false, error: 'Non autorisé' };
 
         try {
-            await db.collection('users').doc(userId).delete();
+            await db.ref('users/' + userId).remove();
             return { success: true };
         } catch (error) {
             return { success: false, error: error.message };
@@ -215,8 +230,8 @@ const UserManager = {
         if (!this.isAdmin()) return null;
 
         try {
-            const doc = await db.collection('users').doc(userId).collection('data').doc('progress').get();
-            return doc.exists ? doc.data() : null;
+            const snapshot = await db.ref('users/' + userId + '/progress').once('value');
+            return snapshot.exists() ? snapshot.val() : null;
         } catch (error) {
             console.error("Erreur lecture progression:", error);
             return null;
@@ -230,8 +245,7 @@ const UserManager = {
         if (!this.isAdmin()) return { success: false, error: 'Non autorisé' };
 
         try {
-            // On délègue au ProgressManager ou on supprime direct le doc
-            await db.collection('users').doc(userId).collection('data').doc('progress').delete();
+            await db.ref('users/' + userId + '/progress').set(ProgressManager.getDefaultProgress());
             return { success: true };
         } catch (error) {
             return { success: false, error: error.message };
@@ -240,14 +254,12 @@ const UserManager = {
 
     /**
      * Met à jour le profil (pour l'admin qui veut changer ses infos)
-     * Note: Changer le mot de passe est complexe avec Firebase Client SDK sans re-login
-     * On va juste permettre de changer le Username pour l'instant
      */
     async updateAdminProfile(newUsername) {
         if (!this.isAdmin()) return { success: false, error: 'Non autorisé' };
 
         try {
-            await db.collection('users').doc(this.getCurrentUserId()).update({
+            await db.ref('users/' + this.getCurrentUserId()).update({
                 username: newUsername
             });
             this.currentUserProfile.username = newUsername;
