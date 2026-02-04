@@ -15,15 +15,23 @@ const UserManager = {
     init() {
         const users = this.getUsers();
 
-        // Toujours s'assurer que l'admin existe et a isAdmin = true
-        users['admin'] = {
-            id: 'admin',
-            username: 'Admin',
-            password: this.hashPassword(this.ADMIN_PASSWORD),
-            isAdmin: true,
-            createdAt: users['admin']?.createdAt || new Date().toISOString()
-        };
-        this.saveUsers(users);
+        // Si l'admin n'existe pas, on le crée avec les identifiants par défaut
+        if (!users['admin']) {
+            users['admin'] = {
+                id: 'admin',
+                username: 'Admin',
+                password: this.hashPassword(this.ADMIN_PASSWORD),
+                isAdmin: true,
+                createdAt: new Date().toISOString()
+            };
+            this.saveUsers(users);
+        } else {
+            // S'assurer que le compte admin garde ses privilèges
+            if (!users['admin'].isAdmin) {
+                users['admin'].isAdmin = true;
+                this.saveUsers(users);
+            }
+        }
     },
 
     /**
