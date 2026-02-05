@@ -83,11 +83,11 @@ const App = {
      * Initialise l'application
      */
     init() {
-        // Ensure Volailles data is linked if available
         if (typeof volaillesData !== 'undefined') {
             FORMATIONS.volailles.data = volaillesData;
         }
 
+        this.setupPasswordToggles();
         this.setupEventListeners();
     },
 
