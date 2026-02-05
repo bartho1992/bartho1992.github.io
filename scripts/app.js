@@ -83,14 +83,9 @@ const App = {
      * Initialise l'application
      */
     init() {
-        console.log("App init...");
-
-        // Debug & Force Data Load
+        // Ensure Volailles data is linked if available
         if (typeof volaillesData !== 'undefined') {
-            console.log("✅ volaillesData chargé:", volaillesData);
             FORMATIONS.volailles.data = volaillesData;
-        } else {
-            console.error("❌ volaillesData est non défini !");
         }
 
         this.setupEventListeners();
