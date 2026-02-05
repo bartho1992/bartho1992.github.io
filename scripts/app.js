@@ -83,8 +83,16 @@ const App = {
      * Initialise l'application
      */
     init() {
-        this.checkAuth();
-        this.setupPasswordToggles();
+        console.log("App init...");
+
+        // Debug & Force Data Load
+        if (typeof volaillesData !== 'undefined') {
+            console.log("✅ volaillesData chargé:", volaillesData);
+            FORMATIONS.volailles.data = volaillesData;
+        } else {
+            console.error("❌ volaillesData est non défini !");
+        }
+
         this.setupEventListeners();
     },
 
