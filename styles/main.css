@@ -1615,7 +1615,11 @@ body {
 
 .btn-toggle-password {
     position: absolute;
-    right: 10px;
+    right: 0;
+    top: 0;
+    height: 100%;
+    width: 48px;
+    /* Larger touch target */
     background: none;
     border: none;
     cursor: pointer;
@@ -1624,7 +1628,6 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 5px;
     transition: color 0.2s;
     z-index: 10;
 }

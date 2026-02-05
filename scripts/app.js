@@ -96,7 +96,7 @@ const App = {
      */
     setupPasswordToggles() {
         document.querySelectorAll('.btn-toggle-password').forEach(btn => {
-            btn.onclick = (e) => {
+            btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 const input = btn.previousElementSibling;
                 if (input && input.tagName === 'INPUT') {
@@ -108,7 +108,7 @@ const App = {
                         btn.textContent = '👁️';
                     }
                 }
-            };
+            });
         });
     },
 
