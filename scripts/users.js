@@ -203,11 +203,8 @@ const UserManager = {
 
         const listener = usersRef.on('value', (snapshot) => {
             const users = [];
-            console.log("Admin: réception données utilisateurs", snapshot.numChildren());
             snapshot.forEach((childSnapshot) => {
-                const u = childSnapshot.val();
-                console.log(" - User:", u.username);
-                users.push(u);
+                users.push(childSnapshot.val());
             });
             callback(users.reverse());
         });
