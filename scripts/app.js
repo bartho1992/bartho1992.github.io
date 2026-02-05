@@ -539,6 +539,9 @@ const App = {
         const formation = FORMATIONS[formationKey];
         this.currentFormation = formationKey;
 
+        // Détermine la liste des modules (spécifique ou générique)
+        const modules = formation.data?.modules || MODULE_NAMES.map(name => ({ title: name }));
+
         document.getElementById('modalTitle').innerHTML = `
             <span style="margin-right: 8px">${formation.icon}</span>
             ${formation.name}
@@ -547,7 +550,8 @@ const App = {
         const body = document.getElementById('modalBody');
         body.innerHTML = `
             <div class="module-list">
-                ${MODULE_NAMES.map((name, index) => {
+                ${modules.map((module, index) => {
+            const name = module.title || module; // Handle object or string
             const completed = ProgressManager.isModuleCompleted(formationKey, index);
             return `
                         <div class="module-item ${completed ? 'completed' : ''}" data-index="${index}">
@@ -580,11 +584,11 @@ const App = {
      */
     openModule(formationKey, moduleIndex) {
         const formation = FORMATIONS[formationKey];
-        const moduleName = MODULE_NAMES[moduleIndex];
-        this.currentModule = moduleIndex;
-
         // Récupère le contenu du module
         const moduleData = formation.data?.modules?.[moduleIndex];
+        const moduleName = moduleData?.title || MODULE_NAMES[moduleIndex];
+
+        this.currentModule = moduleIndex;
 
         document.getElementById('modalTitle').innerHTML = `
             <span style="margin-right: 8px">${formation.icon}</span>
